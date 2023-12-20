@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import precision_score
+import datetime
 
 osebx = yf.Ticker('OSEBX.OL')
 
@@ -25,7 +26,9 @@ predictors = ['Close', 'Volume','Open','High','Low']
 
 def predict(train, test, predictors, model):
     model.fit(train[predictors], train['morgendag'])
-    preds = model.predict(test[predictors])
+    preds = model.predict_proba(test[predictors])[:,1]
+    preds[preds >= 0.6] = 1
+    preds[preds < 0.6] = 0
     preds = pd.Series(preds, index=test.index, name='Predictions')
     combine = pd.concat([test['morgendag'], preds], axis=1)
     return combine
@@ -41,9 +44,38 @@ def backtest(data, model, predictors, start=250, step=25):
         all_predict.append(predictions)        
     return pd.concat(all_predict)
 
-predictions = backtest(osebx, model, predictors)
 
 
+horizons = [2, 5, 60 , 250]
+new_predictors = []
+
+for horizon in horizons:
+    rolling_average = osebx.rolling(horizon).mean()
+    ratio_column = f'Close_Ratio_{horizon}'
+    osebx[ratio_column] = osebx['Close']/rolling_average['Close']
+    
+    trend_column = f'Trend_{horizon}'
+    osebx[trend_column] = osebx.shift(1).rolling(horizon).sum()['morgendag']
+    
+    new_predictors += [ratio_column, trend_column]
+    
+osebx = osebx.dropna()
+    
+predictions = backtest(osebx, model, new_predictors)
+
+predictions.to_csv('predictions_file.csv')
+
+# Predict for future dates
+future_dates = pd.date_range(start=osebx.index[-1], periods=50, freq='B')
+future_predictions = pd.DataFrame(index=future_dates, columns=predictions.columns)
+
+for date in future_dates:
+    future_data = osebx.loc[:date].copy()
+    future_predictions.loc[date] = predict(train, future_data, predictors, model).iloc[-1]
+
+combined_predictions = pd.concat([predictions, future_predictions])
+
+combined_predictions.to_csv('combined_predictions.csv')
 
 print(predictions['Predictions'].value_counts())
 print(precision_score(predictions['morgendag'], predictions['Predictions']))
