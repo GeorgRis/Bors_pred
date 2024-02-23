@@ -65,7 +65,7 @@ predictions = backtest(osebx, model, new_predictors)
 
 predictions.to_csv('predictions_file.csv')
 
-# Predict for future dates
+# Predict for future dates(vil såklart predikere 0 etterhert fordi "preds[preds < 0.6] = 0"
 future_dates = pd.date_range(start=osebx.index[-1], periods=50, freq='B')
 future_predictions = pd.DataFrame(index=future_dates, columns=predictions.columns)
 
